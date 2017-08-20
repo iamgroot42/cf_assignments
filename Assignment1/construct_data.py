@@ -2,7 +2,7 @@ import numpy as np
 
 
 def user_item_matrix(users, ratings, movies):
-	matrix = np.zeros((len(users), len(ratings)))
+	matrix = np.zeros((len(users), len(movies)))
 	for rating in ratings:
 		matrix[rating.userid-1][rating.itemid-1] = rating.rating
 	return matrix

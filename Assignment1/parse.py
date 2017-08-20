@@ -3,6 +3,7 @@ import csv
 import sys
 
 import construct_data
+import algos
 
 class Movie:
 	def __init__(self, row):
@@ -18,7 +19,7 @@ class Rating:
 	def __init__(self, row):
 		self.userid = int(row[0])
 		self.itemid = int(row[1])
-		self.rating = flooat(row[2])
+		self.rating = float(row[2])
 		self.timestamp = row[3]
 
 
@@ -38,16 +39,25 @@ def load_data(file_path, data_type, delim):
 					rows.append(data_type(row))
 				else:
 					rows.append(row)
-				print row
 	return rows
 
 
+def cross_vals(users, ratings, movies, algo):
+	errors = []
+	partials = [construct_data.user_item_matrix(users, ratings[i][0], movies) for i in range(5)]
+	print partials[0]
+	for i in range(5):
+		errors.append(algo(ratings[i][1][:50], partials[i]))
+	return errors, sum(errors) / 5.0
+
+
 if __name__ == "__main__":
-	movies = load_data("u.item", Movie, '|')
+	dd = sys.argv[1]
+	movies = load_data(dd + "u.item", Movie, '|')
 	ratings = []
 	for i in range(1,1+5):
-		ratings.append([tload_data("u" + i + ".base", Rating, '\t'),[tload_data("u" + i " .text", Rating, '\t')]])
-	users = load_data("u.user", User, '|')
-	genres = load_data("u.genre", None, '|')
-	print construct_data.user_item_matrix(users, ratings, movies)
-	print construct_data.item_category_matrix(movies)
+		ratings.append( [load_data(dd + "u" + str(i) + ".base", Rating, '\t'), load_data(dd + "u" + str(i) + ".test", Rating, '\t')] )
+	users = load_data(dd + "u.user", User, '|')
+	genres = load_data(dd + "u.genre", None, '|')
+	ic = construct_data.item_category_matrix(movies)
+	print cross_vals(users, ratings, movies, algos.user_user)
