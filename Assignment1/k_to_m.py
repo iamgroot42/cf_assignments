@@ -4,7 +4,9 @@ import sys
 
 import numpy as np
 from sets import Set
+import random
 
+changed_movieids = None
 
 def load_data(file_path, data_type, delim):
 	rows = []
@@ -20,7 +22,11 @@ def load_data(file_path, data_type, delim):
 
 
 def data_split_save(onem, hk):
+	global changed_movieids
 	rows = load_data(onem + 'ratings.dat', None, "::")
+	random.shuffle(rows)
+	for row in rows:
+		row[1] = changed_movieids[row[1]]
 	size = len(rows) / 5
 	for i in range(5):
 		test = rows[i * size: (i+1)*size]
@@ -50,7 +56,10 @@ def get_category_boolmap(catstring, categories):
 
 
 def movies_genres_save(onem, hk):
+	global changed_movieids
 	rows = load_data(onem + 'movies.dat', None, "::")
+	movieids = [x[0] for x in rows]
+	changed_movieids = {movieids[i]:i for i in range(len(movieids))}
 	categories = []
 	for row in rows:
 		categories += row[2].split("|")
@@ -63,10 +72,10 @@ def movies_genres_save(onem, hk):
 	with open(hk + "u.item", 'w') as file:
 		writer = csv.writer(file, delimiter='|')
 		for row in rows:
-			writer.writerow([row[0], row[1], " ", " ", " "] + get_category_boolmap(row[2], categories))
+			writer.writerow([changed_movieids[row[0]], row[1], " ", " ", " "] + get_category_boolmap(row[2], categories))
 
 
 if __name__ == "__main__":
+	movies_genres_save(sys.argv[1], sys.argv[2])
 	data_split_save(sys.argv[1], sys.argv[2])
 	user_save(sys.argv[1], sys.argv[2])
-	movies_genres_save(sys.argv[1], sys.argv[2])
