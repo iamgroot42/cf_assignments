@@ -9,9 +9,6 @@ class Movie:
 	def __init__(self, row):
 		self.movie_id = int(row[0])
 		self.movie_title = row[1]
-		self.release_data = row[2]
-		self.video_release_data = row[3]
-		self.imdb_url = row[4]
 		self.genres = row[5:]
 
 
@@ -42,12 +39,11 @@ def load_data(file_path, data_type, delim):
 	return rows
 
 
-def cross_vals(users, ratings, movies, algo):
+def cross_vals(users, ratings, movies, algo, weight_fn):
 	errors = []
 	partials = [construct_data.user_item_matrix(users, ratings[i][0], movies) for i in range(5)]
-	print partials[0]
 	for i in range(5):
-		errors.append(algo(ratings[i][1][:50], partials[i]))
+		errors.append(algo(ratings[i][1], partials[i], weight_fn, 5))
 	return errors, sum(errors) / 5.0
 
 
@@ -59,5 +55,7 @@ if __name__ == "__main__":
 		ratings.append( [load_data(dd + "u" + str(i) + ".base", Rating, '\t'), load_data(dd + "u" + str(i) + ".test", Rating, '\t')] )
 	users = load_data(dd + "u.user", User, '|')
 	genres = load_data(dd + "u.genre", None, '|')
-	ic = construct_data.item_category_matrix(movies)
-	print cross_vals(users, ratings, movies, algos.user_user)
+	experiments = [[algos.user_user, algos.pearson], [algos.item_item, algos.pearson], 
+		[algos.knn, algos.significance_weight], [algos.knn, algos.variance_weight]]
+	for experiment in experiments:
+		print cross_vals(users, ratings, movies, experiment[0],experiment[1])
