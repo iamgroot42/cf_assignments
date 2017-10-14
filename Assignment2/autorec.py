@@ -1,109 +1,143 @@
-import numpy as np
 
-#y = b(x) + tf.stop_gradients(f(x) - b(x)) 
+# coding: utf-8
 
+# In[26]:
 from __future__ import division, print_function, absolute_import
+
 
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Import MNIST data
-from tensorflow.examples.tutorials.mnist import input_data
-mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
+from tensorflow.python.platform import flags
+import parser 
 
-# Training Parameters
-learning_rate = 0.01
-num_steps = 30000
-batch_size = 256
+FLAGS = flags.FLAGS
 
-display_step = 1000
-examples_to_show = 10
+flags.DEFINE_string('dataset_folder', './ml-100k/', 'Path to Movielens 100k/1m dataset')
+flags.DEFINE_integer('bsize', 16, 'Batch size')
+flags.DEFINE_integer('num_iters', 10000, 'Number of iterations')
+flags.DEFINE_integer('show_every', 10, 'Show trainign and testing accuracy after every X iterations')
+flags.DEFINE_float('lr', 0.01, 'Learning rate')
+flags.DEFINE_float('reg_lambda', 0.1, "Lambda for regularization")
+flags.DEFINE_string('aetype', 'u', 'Whether autoencoder is user-based(u) or item based(u)')
 
-# Network Parameters
-num_hidden_1 = 256 # 1st layer num features
-num_hidden_2 = 128 # 2nd layer num features (the latent dim)
-num_input = 784 # MNIST data input (img shape: 28*28)
-
-# tf Graph input (only pictures)
-X = tf.placeholder("float", [None, num_input])
-
-weights = {
-    'encoder_h1': tf.Variable(tf.random_normal([num_input, num_hidden_1])),
-    'encoder_h2': tf.Variable(tf.random_normal([num_hidden_1, num_hidden_2])),
-    'decoder_h1': tf.Variable(tf.random_normal([num_hidden_2, num_hidden_1])),
-    'decoder_h2': tf.Variable(tf.random_normal([num_hidden_1, num_input])),
-}
-biases = {
-    'encoder_b1': tf.Variable(tf.random_normal([num_hidden_1])),
-    'encoder_b2': tf.Variable(tf.random_normal([num_hidden_2])),
-    'decoder_b1': tf.Variable(tf.random_normal([num_hidden_1])),
-    'decoder_b2': tf.Variable(tf.random_normal([num_input])),
-}
-
-# Building the encoder
-def encoder(x):
-    # Encoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['encoder_h1']),
-                                   biases['encoder_b1']))
-    # Encoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['encoder_h2']),
-                                   biases['encoder_b2']))
-    return layer_2
+#Training Parameters
+learning_rate = FLAGS.lr
+num_iters = FLAGS.num_iters
+batch_size = FLAGS.bsize
+lamb = FLAGS.reg_lambda
+dd = FLAGS.dataset_folder
+show_every = FLAGS.show_every
 
 
-# Building the decoder
-def decoder(x):
-    # Decoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['decoder_h1']),
-                                   biases['decoder_b1']))
-    # Decoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['decoder_h2']),
-                                   biases['decoder_b2']))
-    return layer_2
+# Don't hog GPU
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True
+sess = tf.Session(config=config)
 
-# Construct model
-encoder_op = encoder(X)
-decoder_op = decoder(encoder_op)
 
-# Prediction
-y_pred = decoder_op
-# Targets (Labels) are the input data.
-y_true = X
+# In[27]:
 
-# Define loss and optimizer, minimize the squared error
-loss = tf.reduce_mean(tf.pow(y_true - y_pred, 2))
-optimizer = tf.train.RMSPropOptimizer(learning_rate).minimize(loss)
 
-# Initialize the variables (i.e. assign their default value)
-init = tf.global_variables_initializer()
+def mae(y, y_):
+    flaty = y.flatten()
+    flaty_ = y_.flatten()
+    mask = (flaty != 0)
+    relevant_count = np.sum(mask)
+    return np.sum(np.multiply(mask, np.absolute(flaty-flaty_)))/relevant_count
 
-# Start Training
-# Start a new TF session
-with tf.Session() as sess:
 
-    # Run the initializer
+# In[28]:
+
+
+def autorec(num_input, num_hidden, data_generator, test_data):
+    X = tf.placeholder("float", [None, R.shape[1]])
+
+    print("K is %d" % (num_hidden))
+    
+    weights = {
+        'encoder': tf.Variable(tf.random_normal([num_input, num_hidden])),
+        'decoder': tf.Variable(tf.random_normal([num_hidden, num_input])),
+    }
+    biases = {
+        'encoder': tf.Variable(tf.random_normal([num_hidden])),
+        'decoder': tf.Variable(tf.random_normal([num_input])),
+    }
+
+    def encoder(x):
+        layer = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['encoder']), biases['encoder']))
+        mask = tf.cast(tf.not_equal(tf.constant(0, dtype=tf.float32), x), tf.float32)
+        return layer, mask
+
+    def decoder(x, mask):
+        layer = 2.5*(1+tf.nn.sigmoid(tf.add(tf.matmul(x, weights['decoder']), biases['decoder'])))
+        masked_backfunc = tf.multiply(layer, mask)
+        # Trick to allow back-gradient propagataion for only part of input nodes
+        back_masked_layer = masked_backfunc + tf.stop_gradient(layer - masked_backfunc) 
+        return layer
+    
+    encoder_op, mask = encoder(X)
+    decoder_op = decoder(encoder_op, mask)
+
+    y_pred = decoder_op
+    y_true = X
+    
+    # Normal MSE loss for autoencoder:
+    loss = tf.reduce_mean(tf.where(y_true==0, tf.zeros_like(y_true), tf.pow(y_true - y_pred, 2)))
+    # Regularization term:
+    loss += (lamb/2) * (tf.nn.l2_loss(weights['encoder']) + tf.nn.l2_loss(weights['decoder']))
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
+    
+    init = tf.global_variables_initializer()    
     sess.run(init)
-
-    # Training
-    for i in range(1, num_steps+1):
-        # Prepare Data
-        # Get the next batch of MNIST data (only images are needed, not labels)
-        batch_x, _ = mnist.train.next_batch(batch_size)
-
-        # Run optimization op (backprop) and cost op (to get loss value)
+    
+    # Train model
+    for i in range(num_iters):
+        batch_x = data_generator.next()
         _, l = sess.run([optimizer, loss], feed_dict={X: batch_x})
-        # Display logs per step
-        if i % display_step == 0 or i == 1:
-            print('Step %i: Minibatch Loss: %f' % (i, l))
+        if i%show_every == 0:
+            print("Training loss (MSE) : %.4f" % (l))
+    
+    # Test model and report MAE
+    test_data_pred = sess.run(decoder_op, feed_dict={X: test_data})
+    return mae(test_data, test_data_pred)
 
-    # Testing
-    # Encode and decode images from test set and visualize their reconstruction.
-    n = 4
-    canvas_orig = np.empty((28 * n, 28 * n))
-    canvas_recon = np.empty((28 * n, 28 * n))
-    for i in range(n):
-        # MNIST test set
-        batch_x, _ = mnist.test.next_batch(n)
-        # Encode and decode the digit image
-        g = sess.run(decoder_op, feed_dict={X: batch_x})
+
+# In[29]:
+
+
+movies = parser.load_data(dd + "u.item", parser.Movie, '|')
+ratings = []
+
+for i in range(1,1+5):
+    ratings.append( [parser.load_data(dd + "u" + str(i) + ".base", parser.Rating, '\t'), parser.load_data(dd + "u" + str(i) + ".test", parser.Rating, '\t')] )
+users = parser.load_data(dd + "u.user", parser.User, '|')
+
+hidden = [10, 20, 40, 80, 100, 200, 300, 400, 500]
+hidden_errors = []
+
+for num_hidden in hidden:
+    errors = []
+    for fold in ratings:
+        R = parser.R_matrix(len(users), len(movies), fold[0]).astype('float32')
+        R_test = parser.R_matrix(len(users), len(movies), fold[1]).astype('float32')
+    
+	if FLAGS.aetype == 'u':
+		R = R.T
+		R_test = R_test.T
+        data_generator = parser.get_next_batch(R, batch_size)
+    
+        error = autorec(R.shape[1], num_hidden, data_generator, R_test)
+        print("MAE for this validation: %f" % (error))
+        errors.append(error)
+    print("MAE for all folds: %f" % (sum(errors)/float(len(errors))))
+    hidden_errors.append(sum(errors)/float(len(errors)))
+
+# Plot MAE with varying number of hidden nodes
+plt.plot(hidden, hidden_errors)
+plt.title('Variation of MAE with number of hidden units')
+plt.ylabel('MAE')
+plt.xlabel('NUmber of hidden units')
+plt.legend()
+plt.savefig('graph.png')
