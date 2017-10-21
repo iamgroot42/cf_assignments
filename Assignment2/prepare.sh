@@ -8,4 +8,4 @@ unzip ml-1m.zip -d ml-1mn
 rm ml-1m.zip
 mkdir ml-1m
 python k_to_m.py ml-1mn/ml-1m/  ml-1m/
-
+rm -r ml-1mn

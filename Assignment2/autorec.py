@@ -16,7 +16,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('dataset_folder', './ml-100k/', 'Path to Movielens 100k/1m dataset')
 flags.DEFINE_integer('bsize', 16, 'Batch size')
-flags.DEFINE_integer('num_iters', 10000, 'Number of iterations')
+flags.DEFINE_integer('num_iters', 3000, 'Number of iterations')
 flags.DEFINE_integer('show_every', 10, 'Show trainign and testing accuracy after every X iterations')
 flags.DEFINE_float('lr', 0.01, 'Learning rate')
 flags.DEFINE_float('reg_lambda', 0.1, "Lambda for regularization")
@@ -43,6 +43,7 @@ sess = tf.Session(config=config)
 def mae(y, y_):
     flaty = y.flatten()
     flaty_ = y_.flatten()
+    y += (y==0) * 3
     mask = (flaty != 0)
     relevant_count = np.sum(mask)
     return np.sum(np.multiply(mask, np.absolute(flaty-flaty_)))/relevant_count
@@ -71,7 +72,7 @@ def autorec(num_input, num_hidden, data_generator, test_data):
         return layer, mask
 
     def decoder(x, mask):
-        layer = 2.5*(1+tf.nn.sigmoid(tf.add(tf.matmul(x, weights['decoder']), biases['decoder'])))
+        layer = 1 + ( 4 * tf.nn.sigmoid(tf.add(tf.matmul(x, weights['decoder']), biases['decoder'])))
         masked_backfunc = tf.multiply(layer, mask)
         # Trick to allow back-gradient propagataion for only part of input nodes
         back_masked_layer = masked_backfunc + tf.stop_gradient(layer - masked_backfunc) 
@@ -85,8 +86,8 @@ def autorec(num_input, num_hidden, data_generator, test_data):
     
     # Normal MSE loss for autoencoder:
     loss = tf.reduce_mean(tf.where(y_true==0, tf.zeros_like(y_true), tf.pow(y_true - y_pred, 2)))
-    # Regularization term:
-    loss += (lamb/2) * (tf.nn.l2_loss(weights['encoder']) + tf.nn.l2_loss(weights['decoder']))
+    # Regularization term (/2 term already included in l2_loss):
+    loss += lamb * (tf.nn.l2_loss(weights['encoder']) + tf.nn.l2_loss(weights['decoder']))
     optimizer = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss)
     
     init = tf.global_variables_initializer()    
@@ -134,10 +135,12 @@ for num_hidden in hidden:
     print("MAE for all folds: %f" % (sum(errors)/float(len(errors))))
     hidden_errors.append(sum(errors)/float(len(errors)))
 
+type = { 'u': 'User Based', 'i': 'Item Based' }
+
 # Plot MAE with varying number of hidden nodes
 plt.plot(hidden, hidden_errors)
-plt.title('Variation of MAE with number of hidden units')
+plt.title('Variation of MAE with number of hidden units for ' + type[FLAGS.aetype] + ' Autoencoder for ' + FLAGS.dataset_folder)
 plt.ylabel('MAE')
 plt.xlabel('NUmber of hidden units')
 plt.legend()
-plt.savefig('graph.png')
+plt.savefig(FLAGS.aetype + 'graph.png')
