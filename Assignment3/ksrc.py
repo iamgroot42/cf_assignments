@@ -2,6 +2,7 @@ import parser
 import numpy as np
 import tensorflow as tf
 
+from sklearn.decomposition import KernelPCA
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth=True
@@ -54,6 +55,13 @@ if __name__ == "__main__":
 		(X_train, Y_train), (X_test, Y_test) = parser.get_data_split(i)
 		X_train = X_train[:10000]
 		Y_train = Y_train[:10000]
+		X_test = X_test[:2000]
+		Y_test = Y_test[:2000]
+
+		pca = KernelPCA(100, 'rbf')
+		X_train = pca.fit_transform(X_train)
+		X_test = pca.transform(X_test)
+
 		features = find_reprs(X_test.astype("float"), X_train.astype("float"), 0.01, 200)
 		indices = np.argmax(features, axis=1)
 		Y_predict = []
